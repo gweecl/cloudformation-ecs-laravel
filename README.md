@@ -71,6 +71,3 @@ Use the AWS [CloudFormation Console](https://console.aws.amazon.com/cloudformati
 ## Contributing
 
 Any improvements or suggestions are welcomed. Just do a commit or pull request.
-
-
-[TO-DO](./to-do.md)
