@@ -1,0 +1,581 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >
+  A stack for deploying containerized applications in AWS ECS with EC2 instances. 
+  Including a public facing load balancer to register the services.
+
+Parameters:
+
+  EnvType:
+    Description: Environment type.
+    Default: dev
+    Type: String
+    AllowedValues: [prod, dev]
+    ConstraintDescription: must specify prod or dev.
+
+  LoadBalancerName: 
+    Description: ALB Name
+    Type: String
+
+  LoadBalancerSubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at two subnets in your selected VPC.
+
+  LoadBalancerSecurityGroup:
+    Description: An existing security group ID.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+
+  LoadBalancerHealthCheckPath:
+    Type: String
+    Description: The path for the Application Load Balancer health check.
+    Default: /
+    MinLength: 1
+    MaxLength: 255
+    ConstraintDescription: Value must be between 1 and 255 characters
+    
+  ClusterName: 
+    Description: ECS Cluster Name.
+    Type: String
+  
+  EcsServiceName: 
+    Description: ECS Service Name. (Optional)
+    Type: String
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  SubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at two subnets in your selected VPC.
+
+  EC2SecurityGroup:
+    Description: An existing security group ID for ECS instances.
+    Type: String
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+      m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+      c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+      c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+      r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+    ConstraintDescription: Please choose a valid instance type.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+
+  CloudWatchLogGroup: 
+    Description: CloudWatch Log Group Name.
+    Type: String
+
+  ContainerLogRetentionInDays:
+    Type: Number
+    Description: Retention settings to specify how long log events are kept in CloudWatch Logs. Expired log events get deleted automatically.
+    Default: 7
+
+  ApplicationDomainName: 
+    Description: Domain Name for the application
+    Type: String
+
+  SeedDockerImageLaravel:
+    Type: String
+    Default: php:7.2-fpm-alpine
+    Description: Initial image before CodePipeline is executed. Existing application images in ECR should override this parameter
+
+  SeedDockerImageNginx:
+    Type: String
+    Default: nginx:alpine
+    Description: Initial image before CodePipeline is executed. Existing application images in ECR should override this parameter
+
+  ImageRepoLaravel:
+    Description: ECR Repositories Name for Laravel
+    Type: String
+
+  ImageRepoNginx:
+    Description: ECR Repositories Name for Nginx web server
+    Type: String
+
+  MaxTaggedContainerImagesToRetain:
+    Type: Number
+    Description: The number of tagged container images to retain before expiring
+    MinValue: 1
+    MaxValue: 100
+    ConstraintDescription: Value must be between 1 and 100
+    Default: 20
+
+  DaysToRetainUntaggedContainerImages:
+    Type: Number
+    Description: The number days to retain untagged container images before expiring
+    MinValue: 1
+    MaxValue: 100
+    ConstraintDescription: Value must be between 1 and 100
+    Default: 7
+  
+  TaskMinContainerCount:
+    Type: Number
+    Description: Minimum number of containers to run for the service
+    Default: 1
+    MinValue: 1
+    ConstraintDescription: Value must be at least one
+
+  # TaskMaxContainerCount:
+  #   Type: Number
+  #   Description: Maximum number of containers to run for the service when auto scaling out
+  #   Default: 2
+  #   MinValue: 1
+  #   ConstraintDescription: Value must be at least one
+
+  # # Scaling params
+  # ServiceScaleEvaluationPeriods:
+  #   Description: The number of periods over which data is compared to the specified threshold
+  #   Type: Number
+  #   Default: 2
+  #   MinValue: 2
+
+  # ServiceCpuScaleOutThreshold:
+  #   Type: Number
+  #   Description: Average CPU value to trigger auto scaling out
+  #   Default: 50
+  #   MinValue: 0
+  #   MaxValue: 100
+  #   ConstraintDescription: Value must be between 0 and 100
+
+  # ServiceCpuScaleInThreshold:
+  #   Type: Number
+  #   Description: Average CPU value to trigger auto scaling in
+  #   Default: 25
+  #   MinValue: 0
+  #   MaxValue: 100
+  #   ConstraintDescription: Value must be between 0 and 100
+  
+  DesiredCapacity:
+    Type: Number
+    Default: '1'
+    Description: Number of instances to launch in your ECS cluster.
+  
+  MaxSize:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances that can be launched in your ECS cluster.
+  
+Conditions:
+  CreateProdResources: !Equals [!Ref EnvType, prod]
+  CreateDevResources: !Equals [!Ref EnvType, dev]
+  HasEcsServiceName: !Not [ !Equals ["", !Ref EcsServiceName] ]
+
+Mappings:
+
+  AWSRegionToAMI:
+    us-east-1:
+      AMIID: ami-0796380bc6e51157f
+    us-east-2:
+      AMIID: ami-04b61a4d3b11cc8ea
+    us-west-1:
+      AMIID: ami-0c9bd36a7394439a6
+    us-west-2:
+      AMIID: ami-0af5f077b70dafc30
+    eu-west-1:
+      AMIID: ami-0dc3fa046ca0e570c
+    eu-central-1:
+      AMIID: ami-0ce9ac8aed24e9ee5
+    ap-northeast-1:
+      AMIID: ami-06cfa258272c37c0b
+    ap-southeast-1:
+      AMIID: ami-00ae2723e3c86c93e
+    ap-southeast-2:
+      AMIID: ami-08f2011d0deea4967
+
+Resources:
+
+  # Simple Amazon ECR Lifecycle Policies to try and reduce storage costs
+  # See: https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html
+  EcrNginxRepository:
+    Type: AWS::ECR::Repository
+    # DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Ref ImageRepoNginx
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub
+          - |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Only keep untagged images for ${DaysToRetainUntaggedContainerImages} days",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": ${DaysToRetainUntaggedContainerImages}
+                  },
+                  "action": { "type": "expire" }
+                },
+                {
+                  "rulePriority": 2,
+                  "description": "Keep only ${MaxTaggedContainerImagesToRetain} tagged images, expire all others",
+                  "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": [ "${EnvironmentName}" ],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${MaxTaggedContainerImagesToRetain}
+                  },
+                  "action": { "type": "expire" }
+                }
+              ]
+            }
+          - DaysToRetainUntaggedContainerImages: !Ref DaysToRetainUntaggedContainerImages
+            MaxTaggedContainerImagesToRetain: !Ref MaxTaggedContainerImagesToRetain
+            EnvironmentName: !Ref EnvType
+
+  # Simple Amazon ECR Lifecycle Policies to try and reduce storage costs
+  # See: https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html
+  EcrLaravelRepository:
+    Type: AWS::ECR::Repository
+    # DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Ref ImageRepoLaravel
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub
+          - |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Only keep untagged images for ${DaysToRetainUntaggedContainerImages} days",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": ${DaysToRetainUntaggedContainerImages}
+                  },
+                  "action": { "type": "expire" }
+                },
+                {
+                  "rulePriority": 2,
+                  "description": "Keep only ${MaxTaggedContainerImagesToRetain} tagged images, expire all others",
+                  "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": [ "${EnvironmentName}" ],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${MaxTaggedContainerImagesToRetain}
+                  },
+                  "action": { "type": "expire" }
+                }
+              ]
+            }
+          - DaysToRetainUntaggedContainerImages: !Ref DaysToRetainUntaggedContainerImages
+            MaxTaggedContainerImagesToRetain: !Ref MaxTaggedContainerImagesToRetain
+            EnvironmentName: !Ref EnvType
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref 'ClusterName'
+
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref CloudWatchLogGroup
+      RetentionInDays: !Ref ContainerLogRetentionInDays
+
+  taskdefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Join ['', [!Ref AWS::StackName, -laravel]]
+      RequiresCompatibilities: [EC2]
+      ContainerDefinitions:
+      - Name: php-laravel
+        Cpu: 16
+        Memory: 128
+        Essential: 'true'
+        Image: !Ref SeedDockerImageLaravel
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: php-laravel
+      - Name: nginx
+        Cpu: 16
+        Memory: 128
+        Links: 
+          - php-laravel
+        Essential: 'true'
+        Image: !Ref SeedDockerImageLaravel
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref CloudwatchLogsGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: nginx
+        PortMappings:
+        - ContainerPort: 80
+        VolumesFrom:
+        - SourceContainer: php-laravel
+
+  ECSALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref LoadBalancerName
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+      - Key: deletion_protection.enabled
+        Value: 'false'
+      - Key: idle_timeout.timeout_seconds
+        Value: '30'
+      - Key: routing.http2.enabled
+        Value: 'true'
+      - Key: access_logs.s3.enabled
+        Value: 'false'
+      - Key: access_logs.s3.prefix
+        Value: !Ref AWS::NoValue
+      Subnets: !Ref LoadBalancerSubnetId
+      SecurityGroups: !Ref LoadBalancerSecurityGroup
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ECSServiceRole
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ECSTG
+      LoadBalancerArn: !Ref ECSALB
+      Port: 80
+      Protocol: HTTP
+
+  ECSALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DependsOn: ALBListener
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref ECSTG
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+
+  HttpsCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: CreateProdResources
+    Properties: 
+      DomainName: !Ref ApplicationDomainName
+      DomainValidationOptions:
+        - DomainName: !Ref ApplicationDomainName
+          ValidationDomain: !Ref ApplicationDomainName
+      ValidationMethod: DNS
+
+  ALBHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateProdResources
+    DependsOn: ECSServiceRole
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ECSTG
+      LoadBalancerArn: !Ref ECSALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref HttpsCertificate
+
+  ECSALBHttpsListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: CreateProdResources
+    DependsOn: ALBHttpsListener
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref ECSTG
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+
+  ECSTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ECSALB
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: !Ref LoadBalancerHealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Name: !Ref LoadBalancerName
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VpcId
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role']
+      Path: /
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ['ecs:CreateCluster', 'ecs:DeregisterContainerInstance', 'ecs:DiscoverPollEndpoint',
+              'ecs:Poll', 'ecs:RegisterContainerInstance', 'ecs:StartTelemetrySession',
+              'ecs:Submit*', 'logs:CreateLogStream', 'logs:PutLogEvents']
+            Resource: '*'
+      
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref 'EC2Role']
+
+  ContainerInstances:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [AWSRegionToAMI, !Ref 'AWS::Region', AMIID]
+      SecurityGroups: [!Ref 'EC2SecurityGroup']
+      InstanceType: !Ref 'InstanceType'
+      IamInstanceProfile: !Ref 'EC2InstanceProfile'
+      KeyName: !Ref 'KeyName'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
+
+  service:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      Cluster: !Ref 'ECSCluster'
+      DesiredCount: !Ref TaskMinContainerCount
+      LoadBalancers:
+      - ContainerName: nginx
+        ContainerPort: '80'
+        TargetGroupArn: !Ref 'ECSTG'
+      Role: !Ref ECSServiceRole
+      ServiceName: !If [ HasEcsServiceName, !Ref EcsServiceName, !Ref AWS::NoValue ]
+      TaskDefinition: !Ref taskdefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: !If [CreateProdResources, 50, 0]
+  
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ecs.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ['elasticloadbalancing:DeregisterInstancesFromLoadBalancer', 'elasticloadbalancing:DeregisterTargets',
+              'elasticloadbalancing:Describe*', 'elasticloadbalancing:RegisterInstancesWithLoadBalancer',
+              'elasticloadbalancing:RegisterTargets', 'ec2:Describe*', 'ec2:AuthorizeSecurityGroupIngress']
+            Resource: '*'
+  
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref 'SubnetId'
+      LaunchConfigurationName: !Ref 'ContainerInstances'
+      MinSize: '1'
+      MaxSize: !Ref 'MaxSize'
+      DesiredCapacity: !Ref 'DesiredCapacity'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+
+  ServiceScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: service
+    Properties:
+      MaxCapacity: 2
+      MinCapacity: 1
+      ResourceId: !Join ['', [service/, !Ref 'ECSCluster', /, !GetAtt [service, Name]]]
+      RoleARN: !GetAtt [AutoscalingRole, Arn]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  
+  ServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: AStepPolicy
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref 'ServiceScalingTarget'
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          ScalingAdjustment: 200
+  
+  ALB500sAlarmScaleUp:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: '1'
+      Statistic: Average
+      Threshold: !If [CreateProdResources, '10', '10000']
+      AlarmDescription: Alarm if our ALB generates too many HTTP 500s.
+      Period: '60'
+      AlarmActions: [!Ref 'ServiceScalingPolicy']
+      Namespace: AWS/ApplicationELB
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt 
+            - ECSALB
+            - LoadBalancerFullName
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: HTTPCode_ELB_5XX_Count
+  
+  AutoscalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [application-autoscaling.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: service-autoscaling
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ['application-autoscaling:*', 'cloudwatch:DescribeAlarms', 'cloudwatch:PutMetricAlarm',
+              'ecs:DescribeServices', 'ecs:UpdateService']
+            Resource: '*'
+  
+Outputs:
+  ecsservice:
+    Value: !Ref 'service'
+  ecscluster:
+    Value: !Ref 'ECSCluster'
+  ECSALB:
+    Description: Your ALB DNS URL
+    Value: !Join ['', [!GetAtt [ECSALB, DNSName]]]
+  taskdef:
+    Value: !Ref 'taskdefinition'

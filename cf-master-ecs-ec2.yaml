@@ -1,0 +1,433 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >
+  This is a root stack which creates all required nested stacks.
+  
+Parameters:
+
+  EnvType:
+    Description: Environment type.
+    Default: dev
+    Type: String
+    AllowedValues: [prod, dev]
+    ConstraintDescription: must specify prod or dev.
+
+  LoadBalancerName: 
+    Description: ALB Name
+    Type: String
+
+  LoadBalancerSubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at two subnets in your selected VPC.
+
+  LoadBalancerSecurityGroup:
+    Description: An existing security group ID for Load Balancer.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  
+  LoadBalancerHealthCheckPath:
+    Type: String
+    Description: The path for the Application Load Balancer health check.
+    Default: /
+    MinLength: 1
+    MaxLength: 255
+    ConstraintDescription: Value must be between 1 and 255 characters
+  
+  ClusterName: 
+    Description: ECS Cluster Name.
+    Type: String
+
+  EcsServiceName: 
+    Description: ECS Service Name. (Optional)
+    Type: String
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances access to the Internet.
+
+  SubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at two subnets in your selected VPC.
+
+  EC2SecurityGroup:
+    Description: An existing security group ID for ECS instances.
+    Type: AWS::EC2::SecurityGroup::Id
+  
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+      m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+      c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+      c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+      r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+    ConstraintDescription: Please choose a valid instance type.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+
+  CloudWatchLogGroup: 
+    Description: CloudWatch Log Group Name.
+    Type: String
+
+  ContainerLogRetentionInDays:
+    Type: Number
+    Description: Retention settings to specify how long log events are kept in CloudWatch Logs. Expired log events get deleted automatically.
+    Default: 7
+
+  ApplicationDomainName: 
+    Description: Domain Name for the application. For creating AWS Certificate Manager.
+    Type: String
+  
+  TaskMinContainerCount:
+    Type: Number
+    Description: Minimum number of containers to run for the service
+    Default: 1
+    MinValue: 1
+    ConstraintDescription: Value must be at least one
+
+  # TaskMaxContainerCount:
+  #   Type: Number
+  #   Description: Maximum number of containers to run for the service when auto scaling out
+  #   Default: 2
+  #   MinValue: 1
+  #   ConstraintDescription: Value must be at least one
+    
+  # ServiceScaleEvaluationPeriods:
+  #   Description: The number of periods over which data is compared to the specified threshold
+  #   Type: Number
+  #   Default: 2
+  #   MinValue: 2
+
+  # ServiceCpuScaleOutThreshold:
+  #   Type: Number
+  #   Description: Average CPU value (Percent) to trigger auto scaling out
+  #   Default: 50
+  #   MinValue: 0
+  #   MaxValue: 100
+  #   ConstraintDescription: Value must be between 0 and 100
+
+  # ServiceCpuScaleInThreshold:
+  #   Type: Number
+  #   Description: Average CPU value (Percent) to trigger auto scaling in
+  #   Default: 25
+  #   MinValue: 0
+  #   MaxValue: 100
+  #   ConstraintDescription: Value must be between 0 and 100
+
+  DesiredCapacity:
+    Type: Number
+    Default: '1'
+    Description: Number of instances to launch in your ECS cluster.
+
+  MaxSize:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances that can be launched in your ECS cluster.
+
+  SeedDockerImageLaravel:
+    Type: String
+    Default: php:7.2-fpm-alpine
+    Description: Initial image before CodePipeline is executed. Existing application images in ECR should override this parameter
+
+  SeedDockerImageNginx:
+    Type: String
+    Default: nginx:alpine
+    Description: Initial image before CodePipeline is executed. Existing application images in ECR should override this parameter
+
+  ImageRepoLaravel:
+    Description: ECR Repositories Name for Laravel.
+    Type: String
+  
+  ImageRepoNginx:
+    Description: ECR Repositories Name for Nginx web server.
+    Type: String
+
+  MaxTaggedContainerImagesToRetain:
+    Type: Number
+    Description: The number of tagged container images to retain before expiring
+    MinValue: 1
+    MaxValue: 100
+    ConstraintDescription: Value must be between 1 and 100
+    Default: 20
+
+  DaysToRetainUntaggedContainerImages:
+    Type: Number
+    Description: The number days to retain untagged container images before expiring
+    MinValue: 1
+    MaxValue: 100
+    ConstraintDescription: Value must be between 1 and 100
+    Default: 7
+
+  GitHubUser:
+    Type: String
+    Description: Your username on GitHub.
+
+  GitHubRepo:
+    Type: String
+    Description: The repo name of the sample service.
+
+  GitHubBranch:
+    Type: String
+    Description: The branch of the repo to continuously deploy.
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Description: >
+      Token for the user specified above. (https://github.com/settings/tokens).
+
+  CodePipelineName:
+    Description: CodePipeline Name.
+    Type: String
+
+  S3CodePipelineBucketName:
+    Description: S3 Bucket Name for CodePipeline artifact store.
+    Type: String
+
+  CodeBuildSpecFileName:
+    Description: The build specification for the project.
+    Type: String
+    Default: buildspec.yml
+
+  # Cloudformation pipeline parameter
+  CFGitHubUser:
+    Type: String
+    Description: Your username on GitHub.
+
+  CFGitHubRepo:
+    Type: String
+    Description: The repo name of the sample service.
+
+  CFGitHubBranch:
+    Type: String
+    Description: The branch of the repo to continuously deploy.
+
+  CFGitHubToken:
+    Type: String
+    NoEcho: true
+    Description: >
+      Token for the user specified above. (https://github.com/settings/tokens)
+  
+  CFCodePipelineName:
+    Description: A name for cloudformation pipeline
+    Type: String
+  
+  CFS3CodePipelineBucketName:
+    Description: S3 Bucket Name for CodePipeline artifact store.
+    Type: String
+  
+  CFCodeBuildSpecFileName:
+    Type: String
+    Description: The build specification for the project.
+    Default: buildspec.yml
+
+  TemplateFileName:
+    Type: String
+    Description: The cloudformation template to deploy (Or the root stack template).
+
+  StackConfig:
+    Type: String
+    Description: The cloudformation Template Configuration File.
+
+  ChangeSetName:
+    Type: String
+    Description: A given name for the cloudformation change set.
+
+  Email:
+    Description: The email address where CodePipeline sends pipeline notifications.
+    Type: String
+    
+  StartEcsLambdaScheduleExpression:
+    Description: >
+      The frequency that determines when CloudWatch Events runs the rule that
+      triggers the Lambda function. Cron or Rate Expressions.
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html
+    Type: String
+
+  StopEcsLambdaScheduleExpression:
+    Description: >
+      The frequency that determines when CloudWatch Events runs the rule that
+      triggers the Lambda function. Cron or Rate Expressions.
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html
+    Type: String
+    
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment
+        Parameters:
+          - EnvType
+      - Label:
+          default: ECS Cluster Configuration
+        Parameters:
+          - LoadBalancerName
+          - LoadBalancerSubnetId
+          - LoadBalancerSecurityGroup
+          - LoadBalancerHealthCheckPath
+          - ClusterName
+          - EcsServiceName
+          - VpcId
+          - SubnetId
+          - EC2SecurityGroup
+          - InstanceType
+          - KeyName
+          - CloudWatchLogGroup
+          - ContainerLogRetentionInDays
+          - ApplicationDomainName
+      - Label:
+          default: ECS Auto Scaling Configuration
+        Parameters:
+          - TaskMinContainerCount
+          # - TaskMaxContainerCount
+          # - ServiceScaleEvaluationPeriods
+          # - ServiceCpuScaleOutThreshold
+          # - ServiceCpuScaleInThreshold
+          - DesiredCapacity
+          - MaxSize
+      - Label:
+          default: ECR Configuration
+        Parameters:
+          - SeedDockerImageLaravel
+          - SeedDockerImageNginx
+          - ImageRepoLaravel
+          - ImageRepoNginx
+          - MaxTaggedContainerImagesToRetain
+          - DaysToRetainUntaggedContainerImages
+      - Label:
+          default: ECS CI/CD Configuration
+        Parameters:
+          - GitHubUser
+          - GitHubRepo
+          - GitHubBranch
+          - GitHubToken
+          - CodePipelineName
+          - S3CodePipelineBucketName
+          - CodeBuildSpecFileName
+      - Label:
+          default: Cloudformation CI/CD Configuration
+        Parameters:
+          - CFGitHubUser
+          - CFGitHubRepo
+          - CFGitHubBranch
+          - CFGitHubToken
+          - CFCodePipelineName
+          - CFS3CodePipelineBucketName
+          - CFCodeBuildSpecFileName
+      - Label:
+          default: CloudFormation Stack Info
+        Parameters:
+          - TemplateFileName
+          - StackConfig
+          - ChangeSetName
+          - Email
+      - Label:
+          default: Scheduled Lambda Configuration
+        Parameters:
+          - StartEcsLambdaScheduleExpression
+          - StopEcsLambdaScheduleExpression
+
+Conditions:
+  CreateProdResources: !Equals [!Ref EnvType, prod]
+  CreateDevResources: !Equals [!Ref EnvType, dev]
+  
+Resources:
+  Cluster:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "./cf-ecs-ec2.yaml"
+      Parameters:
+        EnvType: !Ref EnvType
+        LoadBalancerName: !Ref LoadBalancerName
+        LoadBalancerSubnetId: !Join [ ",", !Ref LoadBalancerSubnetId ]
+        LoadBalancerSecurityGroup: !Join [ ",", !Ref LoadBalancerSecurityGroup ]
+        LoadBalancerHealthCheckPath: !Ref LoadBalancerHealthCheckPath
+        ClusterName: !Ref ClusterName
+        EcsServiceName: !Ref EcsServiceName
+        VpcId: !Ref VpcId
+        SubnetId: !Join [ ",", !Ref SubnetId ]
+        EC2SecurityGroup: !Ref EC2SecurityGroup
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        CloudWatchLogGroup: !Ref CloudWatchLogGroup
+        ContainerLogRetentionInDays: !Ref ContainerLogRetentionInDays
+        ApplicationDomainName: !Ref ApplicationDomainName
+        ClusterName: !Ref ClusterName
+        TaskMinContainerCount: !Ref TaskMinContainerCount
+        # TaskMaxContainerCount: !Ref TaskMaxContainerCount
+        # ServiceScaleEvaluationPeriods: !Ref ServiceScaleEvaluationPeriods
+        # ServiceCpuScaleOutThreshold: !Ref ServiceCpuScaleOutThreshold
+        # ServiceCpuScaleInThreshold: !Ref ServiceCpuScaleInThreshold
+        DesiredCapacity: !Ref DesiredCapacity
+        MaxSize: !Ref MaxSize
+        SeedDockerImageNginx: !Ref SeedDockerImageNginx
+        SeedDockerImageLaravel: !Ref SeedDockerImageLaravel
+        ImageRepoNginx: !Ref ImageRepoNginx
+        ImageRepoLaravel: !Ref ImageRepoLaravel
+        MaxTaggedContainerImagesToRetain: !Ref MaxTaggedContainerImagesToRetain
+        DaysToRetainUntaggedContainerImages: !Ref DaysToRetainUntaggedContainerImages
+
+  DeploymentPipeline:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "./cf-app-pipeline.yaml"
+      Parameters:
+        EnvType: !Ref EnvType
+        Cluster: !GetAtt Cluster.Outputs.ecscluster
+        Service: !GetAtt Cluster.Outputs.ecsservice
+        GitHubUser: !Ref GitHubUser
+        GitHubRepo: !Ref GitHubRepo
+        GitHubBranch: !Ref GitHubBranch
+        GitHubToken: !Ref GitHubToken
+        CodePipelineName: !Ref CodePipelineName
+        S3CodePipelineBucketName: !Ref S3CodePipelineBucketName
+        CodeBuildSpecFileName: !Ref CodeBuildSpecFileName
+        ImageRepoNginx: !Ref ImageRepoNginx
+        ImageRepoLaravel: !Ref ImageRepoLaravel
+        
+
+  CloudformationPipeline:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: "./cf-cloudformation-pipeline.yaml"
+      Parameters:
+        # EnvType: !Ref EnvType
+        GitHubUser: !Ref CFGitHubUser
+        GitHubRepo: !Ref CFGitHubRepo
+        GitHubBranch: !Ref CFGitHubBranch
+        GitHubToken: !Ref CFGitHubToken
+        PipelineName: !Ref CFCodePipelineName
+        S3CodePipelineBucketName: !Ref CFS3CodePipelineBucketName
+        CodeBuildSpecFileName: !Ref CFCodeBuildSpecFileName
+        TemplateFileName: !Ref TemplateFileName
+        StackName: !Ref AWS::StackName
+        StackConfig: !Ref StackConfig
+        ChangeSetName: !Ref ChangeSetName
+        Email: !Ref Email
+
+  ClusterLambdaEvent:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateDevResources
+    Properties:
+      TemplateURL: "./cf-lambda.yaml"
+      Parameters:
+          EnvType: !Ref EnvType
+          EcsCluster: !GetAtt Cluster.Outputs.ecscluster
+          EcsServiceName: !GetAtt Cluster.Outputs.ecsservice
+          StartEcsLambdaScheduleExpression: !Ref StartEcsLambdaScheduleExpression
+          StopEcsLambdaScheduleExpression: !Ref StopEcsLambdaScheduleExpression
+        
+Outputs:
+  ServiceUrl:
+    Description: The sample service that is being continuously deployed.
+    Value: !GetAtt Cluster.Outputs.ECSALB
+
+  AppPipelineUrl:
+    Description: The continuous deployment pipeline for App in the AWS Management Console.
+    Value: !GetAtt DeploymentPipeline.Outputs.PipelineUrl
+
+  CloudformationPipelineUrl:
+    Description: The continuous deployment pipeline for CloudFormation in the AWS Management Console.
+    Value: !GetAtt CloudformationPipeline.Outputs.PipelineUrl
