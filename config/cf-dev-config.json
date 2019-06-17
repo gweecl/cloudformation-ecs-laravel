@@ -10,7 +10,7 @@
         "EcsServiceName": "AWS_ECS_SERVICE_NAME",
         "EcsVpcId": "AWS_VPC_ID",
         "EcsSubnetId": "SUBNET_ID_A,SUBNET_ID_B",
-        "EcsSecurityGroup": "S_GROUP_ID_1,S_GROUP_ID_2",
+        "EcsSecurityGroup": "S_GROUP_ID",
         "CloudWatchLogGroup": "/aws/ecs/AWS_CLOUDWATCH_LOG_NAME",
         "ContainerLogRetentionInDays": "7",
         "ApplicationDomainName": "DOMAIN_NAME_FOR_HTTPS",
@@ -31,7 +31,7 @@
         "GitHubUser": "GITHUB_USERNAME",
         "GitHubRepo": "GITHUB_REPO_NAME",
         "GitHubBranch": "GITHUB_REPO_BRANCH_NAME",
-        "GitHubToken": "github-token-example",
+        "GitHubToken": "github-token-example-no-real-token-here",
         "CodePipelineName": "AWS_CODEPIPELINE_NAME",
         "S3CodePipelineBucketName": "AWS_S3_BUCKET_NAME",
         "CodeBuildSpecFileName": "buildspec.yml",
@@ -39,7 +39,7 @@
         "CFGitHubUser": "CF_SOURCE_GITHUB_USERNAME",
         "CFGitHubRepo": "CF_SOURCE_GITHUB_REPO_NAME",
         "CFGitHubBranch": "CF_SOURCE_GITHUB_REPO_BRANCH_NAME",
-        "CFGitHubToken": "github-token-example",
+        "CFGitHubToken": "github-token-example-no-real-token-here",
         "CFCodePipelineName": "CF_AWS_CODEPIPELINE_NAME",
         "CFS3CodePipelineBucketName": "CF_AWS_S3_BUCKET_NAME",
         "CFCodeBuildSpecFileName": "buildspec.yml",
@@ -58,16 +58,16 @@
     "StackPolicy": {
         "Statement": [
             {
+                "Effect": "Deny",
+                "Action": "Update:*",
+                "Principal": "*",
+                "Resource": "LogicalResourceId/GitHubTokenSecret"
+            },
+            {
                 "Effect": "Allow",
                 "Action": "Update:*",
                 "Principal": "*",
                 "Resource": "*"
-            },
-            {
-                "Effect": "Deny",
-                "Action": "Update:*",
-                "Principal": "*",
-                "Resource": "LogicalResourceId/YOUR_RESOURCES_LOGICAL_ID"
             }
         ]
     }

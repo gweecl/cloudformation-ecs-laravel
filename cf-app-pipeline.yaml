@@ -181,7 +181,7 @@ Resources:
       Name: !Ref AWS::StackName
       ServiceRole: !Ref CodeBuildServiceRole
 
-  Pipeline:
+  CFPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       Name: !Ref 'CodePipelineName'
@@ -239,4 +239,4 @@ Resources:
 
 Outputs:
   PipelineUrl:
-    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${Pipeline}
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${CFPipeline}

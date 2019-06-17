@@ -24,16 +24,16 @@ However, the value will change back to `github-token-example` with the CodePipel
 {
   "Statement" : [
     {
-      "Effect" : "Allow",
-      "Action" : "Update:*",
-      "Principal": "*",
-      "Resource" : "*"
-    },
-    {
       "Effect" : "Deny",
       "Action" : "Update:*",
       "Principal": "*",
       "Resource" : "LogicalResourceId/YOUR_RESOURCES_LOGICAL_ID"
+    },
+    {
+      "Effect" : "Allow",
+      "Action" : "Update:*",
+      "Principal": "*",
+      "Resource" : "*"
     }
   ]
 }
