@@ -1,0 +1,15 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - |
+        aws cloudformation package --template-file $CF_TEMPLATE_FILE_NAME \
+        --s3-bucket $CODEPIPELINE_S3_BUCKET_NAME \
+        --s3-prefix cf-stacks-template \
+        --output-template-file transformed-$CF_TEMPLATE_FILE_NAME
+
+artifacts:
+  files:
+    - ./**/*
+  discard-paths: no

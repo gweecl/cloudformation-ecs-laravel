@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >
+  Resources needed to deploy a scheduled lambda function.
+
+
+####################################################################################
+Parameters:
+####################################################################################
+
+  EnvType:
+    Description: Environment type.
+    Default: dev
+    Type: String
+    AllowedValues: [prod, dev]
+    ConstraintDescription: must specify prod or dev.
+
+  EcsCluster:
+    Type: String
+    
+  EcsServiceName:
+    Type: String
+
+  StartEcsLambdaScheduleExpression:
+    Description: >
+      The frequency that determines when CloudWatch Events runs the rule that
+      triggers the Lambda function. Cron or Rate Expressions.
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html
+    Type: String
+
+  StopEcsLambdaScheduleExpression:
+    Description: >
+      The frequency that determines when CloudWatch Events runs the rule that
+      triggers the Lambda function. Cron or Rate Expressions.
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html
+    Type: String
+  
+  Subnets:
+    Description: Choose which subnets the Lambda-functions should be deployed to
+    Type: List<AWS::EC2::Subnet::Id>
+
+  SecurityGroup:
+    Description: Select the Security Group to use for the Lambda-functions
+    Type: AWS::EC2::SecurityGroup::Id
+
+
+####################################################################################
+Conditions:
+####################################################################################
+
+  CreateProdResources: !Equals [!Ref EnvType, prod]
+  CreateDevResources: !Equals [!Ref EnvType, dev]
+
+  
+####################################################################################
+Resources:
+####################################################################################
+
+  LambdaExecutionRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: root
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Resource: "*"
+                  Effect: Allow
+                  Action:
+                    - ecs:UpdateService
+                    - ec2:CreateNetworkInterface
+                    - ec2:DescribeNetworkInterfaces
+                    - ec2:DeleteNetworkInterface
+
+  EcsTaskScheduleLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: schedule.handler
+      Runtime: nodejs8.10
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code: "./lambda/schedule.js"
+      Environment:
+        Variables:
+          ECS_SERVICE_NAME: !Ref EcsServiceName
+          ECS_CLUSTER: !Ref EcsCluster
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        SubnetIds: !Ref Subnets
+
+  StartEcsLambdaSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: >
+        A schedule for the Lambda function to start ECS service during office hours.
+      ScheduleExpression: !Ref StartEcsLambdaScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${EcsTaskScheduleLambdaFunction.Arn}
+          Id: StartEcsLambdaScheduleV1
+          Input: '{"status": "start"}'
+  
+  StopEcsLambdaSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: >
+        A schedule for the Lambda function to stop ECS service after office hours.
+      ScheduleExpression: !Ref StopEcsLambdaScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${EcsTaskScheduleLambdaFunction.Arn}
+          Id: StopEcsLambdaScheduleV1
+          Input: '{"status": "stop"}'
+
+  PermissionForEventsToInvokeStartEcsLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        !Ref EcsTaskScheduleLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "StartEcsLambdaSchedule"
+          - "Arn"
+
+  PermissionForEventsToInvokeStopEcsLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        !Ref EcsTaskScheduleLambdaFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "StopEcsLambdaSchedule"
+          - "Arn"
+
+
+####################################################################################
+Outputs:
+####################################################################################
+
+  LambdaFunction:
+    Value: !Ref EcsTaskScheduleLambdaFunction
