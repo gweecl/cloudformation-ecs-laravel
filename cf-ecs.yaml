@@ -65,6 +65,10 @@ Parameters:
   ApplicationDomainName: 
     Description: Domain Name for the application
     Type: String
+    
+  EcsAlertEmail:
+    Type: String
+    Description: Email for sending alert when ECS task stopped.
 
   SeedDockerImageLaravel:
     Type: String
@@ -530,6 +534,42 @@ Resources:
               'ecs:DescribeServices', 'ecs:UpdateService']
             Resource: '*'
             
+  SNSTopicForEcs:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: !Sub EcsTaskStoppedAlert-${ECSCluster}
+      Subscription: 
+        - Endpoint: !Ref EcsAlertEmail
+          Protocol: Email
+
+  EventRuleForEcs:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Captures ECS task events where the task has stopped running under ECS cluster. 
+      EventPattern: !Sub 
+        - |
+          {
+            "source": [
+              "aws.ecs"
+            ],
+            "detail-type": [
+              "ECS Task State Change"
+            ],
+            "detail": {
+              "clusterArn": [ 
+                "${ECSClusterArn}" 
+              ],
+              "lastStatus": [
+                "STOPPED"
+              ]
+            }
+          }
+        - { ECSClusterArn: !GetAtt ECSCluster.Arn }
+      State: ENABLED
+      Targets: 
+        - Arn: !Ref SNSTopicForEcs
+          Id: "TargetSNSTopicV1"
+            
 Outputs:
   ecsservice:
     Value: !Ref 'service'
@@ -540,3 +580,5 @@ Outputs:
     Value: !Join ['', [!GetAtt [ECSALB, DNSName]]]
   taskdef:
     Value: !Ref 'taskdefinition'
+  SnsTopicForEcsTask:
+    Value: !Ref 'SNSTopicForEcs'
