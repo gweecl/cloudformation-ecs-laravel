@@ -58,6 +58,7 @@ Use the AWS [CloudFormation Console](https://console.aws.amazon.com/cloudformati
 - [Uploading nested template to an S3 Bucket](./docs/upload-cf-artifacts-s3.md)
 - [Cost-Efficient ECS services with Scheduled Lambda](./docs/ecs-scheduled-lambda.md)
 - [Required artifacts in application repository](./docs/app-repo-artifacts.md)
+- [Sending SNS Alerts for Task Stopped Events](./docs/sns-for-ecs-task-stopped-event.md)
 
 
 ## Reference
