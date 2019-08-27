@@ -64,6 +64,10 @@ Parameters:
   ApplicationDomainName: 
     Description: Domain Name for the application. For creating AWS Certificate Manager.
     Type: String
+    
+  EcsAlertEmail:
+    Type: String
+    Description: Email for sending alert when ECS task stopped.
 
   TaskMinContainerCount:
     Type: Number
@@ -250,6 +254,7 @@ Metadata:
           - CloudWatchLogGroup
           - ContainerLogRetentionInDays
           - ApplicationDomainName
+          - EcsAlertEmail
       - Label:
           default: ECS Auto Scaling Configuration
         Parameters:
@@ -331,6 +336,7 @@ Resources:
         CloudWatchLogGroup: !Ref CloudWatchLogGroup
         ContainerLogRetentionInDays: !Ref ContainerLogRetentionInDays
         ApplicationDomainName: !Ref ApplicationDomainName
+        EcsAlertEmail: !Ref EcsAlertEmail
         TaskMinContainerCount: !Ref TaskMinContainerCount
         TaskMaxContainerCount: !Ref TaskMaxContainerCount
         ServiceScaleEvaluationPeriods: !Ref ServiceScaleEvaluationPeriods
